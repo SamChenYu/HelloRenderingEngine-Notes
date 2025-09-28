@@ -166,6 +166,17 @@ public:
     }
 };
 
+/*
+This causes a two step initialization:
+E.g.
+std::string hi;
+hi = "hello";
+
+AS OPPOSED TO
+std::string hi = "hello";
+For trivial types this is mostly fine, but heavier objects such as vectors requires allocations, initialization, then deallocating the unused initialization.
+*/
+
 // Option 1:
 class window {
     GLFWwindow* m_Window{};
@@ -214,11 +225,11 @@ It is higly likely to change. Therefore we can put it in the cpp using an anonym
 - Move code out of the constructor body into a helper function
 - Then use the initializer list
 - Suddenly we can work with a member reference rather than pointer
-`GLFWwinodw* m_Window -> GLFWwindow& m_Window`
+`GLFWwindow* m_Window -> GLFWwindow& m_Window`
 A word of caution:
 - References cannot be assigned to
 - So types with copy/move semantics like this need to stick to pointers
-
+SO BASICALLY => References must be bound at declaration. Using initializer lists allows for immediate assignment meaning you don't have to use pointers!!!!
 
 ## Use Forward Declarations To Minimize Dependencies
 When a compiler looks at a class, one thing it needs is the size of its member variables in memory. Here it doesn't know anything about GLFWwindow, but it knows it exists but it doesn't need to because it only deals with ref -> Therefore a pointer! This means we don't even neeed to include GLFW in the header
@@ -246,3 +257,67 @@ Friendship grants access to private data
 If overused it can break encapsulation
 But used judiciously, it can improve it!
 - Does it reduce your clients' chances of making a mistake without excessive tradeoffs?
+
+
+
+
+# Coding Time
+branch: start_lecture_3
+Currently just a blank window - a lot of GLFW initialization code is inside DemoMain.cpp
+
+1) Moving DemoMain.cpp GLFW Init to GLFWWrappers.hpp
+
+GLFWWrappers.hpp
+Create namespace demo => Move DemoMain.cpp GLFW Init code and #include headers to GLFWWrappers.hpp
+
+DemoMain.cpp
+Includes GLFWrappers.hpp, glfw_manager now have demo:: namespace 
+
+This compiles fine but there is now a linker error! errorCallback() which is defined in the header, both DemoMain.cpp and GLFWWrapper.hpp are compiling it and linker sees it twice. 
+You would need to move the errorCallback() into the cpp, but anonymous namespace. Therefore it is only visible inside GLFWwrappers.cpp
+
+Move the implementation of the constructor of glfw_manager() into the .cpp so the .hpp only has declarations. Same thing is done for the destructors.
+This is clean because .hpp only has declarations and .cpp has the definitions.
+
+Add [[nodiscard]] for glfw_manager, window and GLFWwindow get() to make sure the references are used
+
+2) Window still has all the implementation inside GLFWWrappers.hpp
+Move window::window() constructor code into .cpp
+Next, the constructor body of the window has a lot of random GLFW intialization e.g. glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); ...
+We can put it into intializer lists
+Put `GLFWwindow* make_window() {` function inside the anonoymous namespace of GLFWWrappers.cpp 
+Then in the window:window() constructor you add `make_window()` as an initialization list.
+Continue the same for the destructor, moving it into the .cpp
+
+
+3) Incremental Refactoring!
+The pointer to the window within the window class can now become a reference instead of a pointer because of the initialization lists.
+The `GLFWwindow& get()` no longer needs to throw a null pointer exception because now it is a reference!
+Within the .cpp you change it to references in.
+Destructors of the glfwWindow requires pointers, but you can just pass in the reference and be fine.
+
+
+4) Remove dependencies
+Now that we have mostly moved all of the implementations out of .hpp into .cpp of the GLFWWrappers, most of the dependencies are not needed inside the header and can be moved into the source files. (Things like <iostream>). The rest of the world doesn't need to know that these classes use those libraries.
+
+5) Foward Declaration
+Inside GLFWWrappers.hpp, you can create the declaration of `struct GLFWwindow` into the global namespace, and remove the include for GLFW, and move it into the .cpp. (Remember this works because the struct are actually all references, not the objects, now the hpp does not have any dependencies)
+
+6) Friendly APIs
+Make the window constructor private, but make the glfw_manager a friend. Create a method under glfw_manager `create_window()` which calls that private constructor.
+Declare them in the .hpp and then the implementation in the .cpp
+When creating a window declaration in DemoMain.cpp, add the `manager.create_window()` as a friend.
+Another important thing is that glfw_manager is declared before window, therefore when you use the `create_window()`, it can't actually see it - you could wrap glfw_manager inside window but you could just make another forward declaration.
+
+Overall - DemoMain is a lot nicer (not more random inits). GLFWWrappers have no dependencies, just entirely declarations (except for returning the reference of GLFWWindow& get())
+Exploited anonymous namespaces to wrap up implementation details.
+
+
+
+Peter Pimley's note! 
+window class cannot make copies (copy constructor had been deleted, nothing said about move constructor it cannot do moves either).
+We also have another function
+`[[nodiscard]] window glfw_manager::create_window() { return window{}; }`
+It's not allowed to move /copy
+This is called copy elision. It isn't doing a copy or move, it is creating in place rather than two step.
+Also called return value optimisation -> The object is constructed directly in the caller's memory, skipping copy/move entirely.

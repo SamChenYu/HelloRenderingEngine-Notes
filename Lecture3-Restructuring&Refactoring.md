@@ -1,4 +1,4 @@
-# Lecture 3
+# Lecture 3 - Restructuring & Refactoring
 
 ## Recap
 - ChatGPT generated GLFW window creation - plagirized from LearnOpenGL

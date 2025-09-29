@@ -1,4 +1,4 @@
-# Lecture 1
+# Lecture 1 Introduction
 
 Instancing
 - Rendering jupiter's asteroid belt as instanced rocks - > 10,000 individual rocks but they are all the same object just transformed and had 1 draw call on the GPU

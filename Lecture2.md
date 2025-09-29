@@ -3,7 +3,7 @@
 ## Design Principles
 
 ### Heed Warnings
-- e.g. ` int error code; ` must not be warned!
+- e.g. `int error code;` should be used!
 
 ### Don't overcomment
 - 'The compiler doesn't read comments'
@@ -20,9 +20,9 @@ struct glfw_manager {
 - Destructor is called when you leave scope - even if you throw or return early there is a caveat, if you pass in `glfw_manager` through a function call, when you leave that function scope it will get destructed. This can be prevented with Singleton design pattern (however overcommit on design)! Better solution for this use case is to disabled copies and moves.
 - We never explicitly call `glfwInit()` or `glfwTerminate()`
 - Additional calls to constructor returns true immediately or returns immediately if the destructor called.
-- Always have ` glfwTerminate()` before returning
-- Have separation of concerns: Initializing/Terminating GLFW is differnt to Creating/Destroying a window, you'll want different RAII classes for each.
-- GLFW likes pointers - deferencing them is undefined behaviour. Always check a pointer before dereferncing it.
+- Always have `glfwTerminate()` before returning
+- Have separation of concerns: Initializing/Terminating GLFW is different to Creating/Destroying a window, you'll want different RAII classes for each.
+- GLFW likes pointers - deferencing them is undefined behaviour. Always check a pointer before dereferencing it.
 
 ### Prefer References to Pointers where you can
 ``` cpp
@@ -62,9 +62,9 @@ GLFWwindow& get() {
 }
 // Code is future proof, but this is redundant if m_Window is guaranteed to be non null, and it's cheap and this is not performance critical code
 ```
-Advanced cpp! Don't be tempted by `noexcept` 
+Advanced cpp! Don't be tempted by `noexcept`  
 ` GLFWwindow& get() noexcept {return *m_Window; }`
-- Noexcept is part of the function signature, and if you want to change the design in the future, you will have to remove the noexcept
+- `noexcept` is part of the function signature and says that the return type never raises an exception, and if you want to change the design in the future, you will have to remove it
 The code can subtly break (c.f. Contracts - the Lakos Rule)
 
 

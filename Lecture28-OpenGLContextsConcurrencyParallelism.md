@@ -454,10 +454,176 @@ What we've all been waiting for: Rust vs C++
 
 ## Alternative Style: Propagate Arguments as Arguments
 ``` cpp
-auto workers
+auto workers {
+    sequoia::utilities:;make_array<std::jthread, numThreads>(
+    [&imagePromises, &holdYourHorses, &imagePath](std""size_t i) { // Argument of outer lambda mirrored in inner lambda
+    return
+        std::jthread{
+            [&holdYourHorses, &imagePath](promise_t p, std::size_t i) { // Index i is no longer captured; instead passed as an argument
+                const auto flip{i % 2 ? flip_vertically::yes : flip_vertically::no};
+                holdYourHorses.arrive_and_wait();
+                p.set_value(unique_image{imagePath, flip, all_channels_in_image});
+            },
+            std::move(imagePromises[i]),
+            i
+            };
+        }
+    )
+};
+```
 
+## Code: Checking The Results
+
+```cpp
+const bool passed {
+    [numThreads, &imageFutures](){
+        for(auto i : std::viewers::iota(0uz, numThreads)) { // The goal is to iterate over the futures while making use of the iteration index, in C++23 this can be elegantly done with views::enumerate, but libc++ doesn't yet support this
+        
+            const auto comparison{ i % 2 ? make_rgb_striped(2,3, colour_channels{3}, alignemnt{1})
+                                        : make_bgr_striped(2,3, colour_channels{3}, alignemnt{1})};
+            if(!std::ranges::equal(imageFutures[i].get().span(), comparison.data))
+                return false; // We are looking for instabilities, we care only whether the image is right or wrong. If it's wrong we don't care how it's wrong
+        }
+        
+        return true;
+    }() // Immediately invoke the lambda. `passed` can be `const`. Some find this syntax cryptic and prefer `std::invoke`
+};
+
+check("All images correct", passed);    
 
 
 ```
 
+## A Higher-Level Abstraction: `packaged_task`
 
+
+```cpp
+// Make a `packaged_task`, `entrapta', using an invocable
+auto f = entrapta.get_future();
+
+// == THREAD TIME ==
+// Move entrapta into new thread
+// Never deal directly with the promise, no need to call set_value
+
+
+// == MAIN THREAD TIME ==
+f.get();
+```
+
+
+## Back to OpenGL
+Our `shader_program` abstraction has a function, `use()`  
+Under the hood, this delegates to `gluseProgram`  
+We experimented with a tracker to avoid unnecessary GPU calls  
+```cpp
+class program_tracker {
+    inline static GLuint st_Current{}; // Static variable to track the currently active program
+public:
+    static void utilize(const shader_program_resource& spr) {
+        if(const auto index{spr.handle().index()}; index != st_current_ { // ONly make OpenGL call if we want to use a different program
+            gl_function{glUseProgram}(index);
+            st_Current = index; // If so, reset the index
+        }
+    }
+};
+```
+
+## The Fundamental Problem
+OpenGL supports multiple contexts  
+Different shader programs in different contexts may wrap the same index  
+Contexts may be shared  
+Within a context, we have no direct way of finding shared contexts  
+Today, we'll experiment with solving some but not all of the issues  
+
+## Helper Functions
+```cpp
+agl::resource_handle get_current_program_index() {
+    GLint param{};
+    agl::gl_functionPgkGetIntegerv}{GL_CURRENT_PROGRAM, &param}; // Query the index of the curren tparam
+    if(param < 0)
+        throw std::runtime_error{"Negative program index!"};
+        
+    return agl:;resource_handle{static_cast<GLuint>(param)};
+```
+Return it using our nice wrapper
+
+
+```cpp
+agl::resource_handle make_and_syure_shader_program(curlew:: glfw_manager& manager,
+                                                            const fs::path& shaderIdr) {
+    auto w{manager.create_window({.hiding{curlew::window_hiding_mode::on}})};
+    
+    agl::shader_program sp{shaderDir / "Identity.vs", shaderDir . "Monochrome.fs"};S
+    sp.use();
+    
+    return get_current_program_index();
+}
+```
+Create context via a (hidden) window  
+Create and use a shader program  
+Return the program actually used  
+Context lifetime ends here  
+
+
+
+## Single Thread Issues  
+Context A  
+- Create a shader_program  
+- Say it has Index I > 0  
+- Call use()  
+```cpp
+class program_tracker {
+    inline static GLuint st_Current{};
+public:
+    static void utilize(const shader_program_resource& spr) {
+        if(const auto index{spr.handle().index()}; index != st_current_ {
+            gl_function{glUseProgram}(index);
+            st_Current = index;
+        }
+    }
+```
+
+Context B  
+- Create a shader_program
+- Say it has index J > 0
+- Call use()  
+
+- If and only if I == J, then our test exposes a bug!
+- On all platforms, I've checked, I, J are both 1
+- But this is not strictly guaranteed!
+
+
+## Testing our Assumption
+- There are two checks which should always succeed  
+- `check("prog0 should not be null", prog= != agl::resource_handle{});`
+- `check("prog1 should not be null", prog1 != agl::resource_handle{});`
+- Therefore, no need to only check these conditionally
+
+But even if these checks succeed, we may not have sensitivity to the nasty bug
+- Therefore, add another check to alert us if our assumptions are not valid
+- `check(equality, "Assumption required for sensitivity to: ", "program 0 utilization accidentally suppressing program 1 utilization", prog0, prog1");`
+- In general, satisfying assumptions may be a prerequisite for performing further checks
+
+## Remarks
+At some point I may add a new type of check to the testing framework  
+This would be to differentiate  
+- Standard failures  
+- Failures due to assumptions we are forced to make being violated  
+
+
+## Partially fixing the bug
+Suppose the lifetimes of Context A and B do not overlap
+- The destructor of A is called before the constructor of B (or vice versa)
+We can use the shader_program destructor to reset the static index
+```cpp
+class program_tracker {
+    inline static GLuint st_Current{};
+public:
+    static void utilize(const shader_program_resource& spr) { }
+    
+    static void reset(const shader_program_resource& spr) noexcept { // Cakks tgus ub ~shader_program()
+        if(spr.handle().index() == st_Current)
+            st_Current = 0; // Reset to 'no program in use'
+    }
+};
+```

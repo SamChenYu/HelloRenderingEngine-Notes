@@ -8,8 +8,8 @@ We finally got out texture rendering correctly on all platforms!
 
 ## Design Principles / Techniques in Action
 Techniques for passing data out of threads  
-    - `std::promise` / `std::future` and `std::packaged_task` refinement
-`std::latch` as a tool for reducing multithreaded test instabilities
+- `std::promise` / `std::future` and `std::packaged_task` refinement
+- `std::latch` as a tool for reducing multithreaded test instabilities
 
 Lambas  
     - Lifetime management of captures  
@@ -57,7 +57,7 @@ GLFWwindow* glfwCreateWindow(
 ## The Current Context
 ```cpp
 void glfwMakeContextCurrent(GLFWwindow* window);
-// Makes the context of the specified window current on the calling thread.
+// Makes the context of the specified window current for the calling thread.
 ```
 Any thread can have multiple contexts with at most one current context  
 

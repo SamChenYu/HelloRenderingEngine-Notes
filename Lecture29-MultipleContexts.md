@@ -20,7 +20,7 @@ Utilizing existing structures in our code
 Judicious use of regular expressions
 
 
-##Design Principles / Techniques In Action
+## Design Principles / Techniques In Action
 
 Pointers to member functions
 
@@ -79,6 +79,14 @@ Loading the functions is like adding tools to the belt
 
 Recall lecture 1 - graphs
 
+Node and Graphs
+Nodes are geometry, transforms and textures.
+Each edge is a framebuffer
+They allow us to render stuff offscreen to texture attachments.
+These texture attachment can be used on geometry.
+
+Then you can start rendering.
+
 ## The Creative Principle Resides In Mathematics
 
 We identified a DAG as the natural mathematical abstraction
@@ -119,6 +127,11 @@ However, for many purposes it’s fine (and is what the LearnOpenGL tutorial use
 
 ## Enter the MX option
  
+
+https://gen.glad.sh
+
+Enable MX - multiple GL context
+
 Function pointers and data are no longer global
 
 Instead, they are held within a struct
@@ -128,16 +141,46 @@ Each instantiation corresponds to a Context
 
 ## Compare and Contrast
 
+```cpp
+
+// Normal header
+
+#define GL_VERSION 1_0 1 // Global Variable
+GLAD_API_CALL int GLAD_GL_VERSION_1_0;
+#define GL_VERSION 1_1 1
+GLAD_API_CALL int GLAD_GL_VERSION_1_1;
+....
+
+
+GLAD_API_CALL PFNGLACTIVESHADERPROGRAMPROC glad_glActiveShaderProgram;
+#define glActiveShaderProgram glad_glActiveShaderProgram; // Alias of the global variable
+GLAD_API_CALL PFNGLACTIVETEXTUREPROC glad_glACtiveTexture;
+#define glActiveTexture glad_glActiveTexutre
+
+// MX Header
+typedef struct GladGLContext {
+    void* userptr;
+
+    int VERSION_1_0; // Analogous Member Variable
+    int VERSION_1_1;
+    ...
+
+    PFNGLACTIVESHADERPGORAMPROC ActiveShaderProgram; // Analogous member variable
+    PFNGLACTIVETEXTUREPROC ActiveTexture;
+}
+```
+
+
 ## What Changes?
 
 The code is easier to understand in the multi-context case!
 There’s a slightly higher level of abstraction
 
 Naming has changed
-glActiveTexture → ActiveTexture
+`glActiveTexture` → `ActiveTexture`
 
 We now require a Context to invoke OpenGL functions
-glActiveTexture(42)→ context.ActiveTexture(42)
+`glActiveTexture(42)` → `context.ActiveTexture(42)`
 
 
 ## A Refactoring Challenge
@@ -153,13 +196,13 @@ But our design gives us a better way!
 
 ## `gl_function` to the rescue!
 
-Invocations of OpenGL functions are wrapped in gl_function
+Invocations of OpenGL functions are wrapped in `gl_function`
 
-Simply searching for gl_function illuminates the refactoring challenge
+Simply searching for `gl_function` illuminates the refactoring challenge
 
-Everywhere there’s a gl_function, we’ll need a Context
+Everywhere there’s a `gl_function`, we’ll need a Context
 
-Let’s start with gl_function itself and go from there…
+Let’s start with `gl_function` itself and go from there…
 
 
 ## `gl_function` Refresher
@@ -175,9 +218,9 @@ public:
 
     constexpr static num_messages max_reported_messages {10}; // Dubious hard-coding. This will come out in the wash
 
-    gl_function(functino_pointer_type f, std::source_location loc = std::source_location::current()) {...} // Constructors
+    gl_function(function_pointer_type f, std::source_location loc = std::source_location::current()) {...} // Constructors
     
-    gl_functino(unchecked_debug_output_t, functino_pointer_type f, std::source_location loc = std::source_location::current()) {...} // Constructors
+    gl_function(unchecked_debug_output_t, functino_pointer_type f, std::source_location loc = std::source_location::current()) {...} // Constructors
 
     [[nodiscard]]
     R operator()(Args.. args, std::source_location loc = std::source_location::current()) const {...} // Invocation operators
@@ -204,7 +247,7 @@ private:
 
 ## `gl_function` Usage
 
-`gl_function{glActiveTexture} (42); // Invocaion
+`gl_function{glActiveTexture} (42);` // Invocation
 
 Construction
 glActiveTexture is a function pointer
@@ -212,28 +255,22 @@ No template arguments need be specified, thanks to the deduction guide
 ```cpp
 template<class R, class... Args>
 gl_function(R(*)(Args...)) -> gl_function<R(Args..)>;
-// For this constructor signature, deduce these template arguments
+// For this constructor signature, deduce these template arguments so you don't have to reassign the params!
 ```
-
-
-
-
-
-
 
 
 ## Where to feed in the Context?
 Prior to construction
-gl_function{context.ActiveShader}
+`gl_function{context.ActiveShader}`
 
 At construction
-	gl_function{context, ??? ActiveShader ???}
+`gl_function{context, ??? ActiveShader ???}`
 
 At Invocation
-		gl_function{??? ActiveShader ???}(context, 42)
+`gl_function{??? ActiveShader ???}(context, 42)`
 
 ## Option 1 has a problem
-context.ActiveShader is a function pointer (so far so good…)
+`context.ActiveShader` is a function pointer (so far so good…)
 
 But we can’t get the context back from this
 
@@ -253,17 +290,17 @@ Why not supply the context when it’s needed?
 ⇒ Option3
 
 ## Option 3: The Construction Conundrum
-We want something like gl_function{ActiveTexture}
+We want something like `gl_function{ActiveTexture}`
 
 But ActiveTexture is a member variable of GladGLContext
 
-Writing gl_function{ActiveTexture} is analogous to expecting this to work:
-	struct foo { int x; };
-	some_function(x);
+Writing `gl_function{ActiveTexture}` is analogous to expecting this to work:
+`struct foo { int x; };`
+`some_function(x); // garbage that can't compile because it actually needs to be foo.x`
 
 
 ## Bad Options
-We could make a function pointer context.ActiveShader
+We could make a function pointer `context.ActiveShader`
 
 But we’ll need to repeat context to feed to check_for_errors
 
@@ -273,7 +310,7 @@ But check for errors using a different context
 Hard to spot if invocation is deferred
 
 This give us an API which is hard to love
-gl_function{context, context.ActiveShader}
+`gl_function{context, context.ActiveShader}`
 Even here we could use different contexts, though it’s easy to spot
 
 ## Pointers To Members
@@ -298,12 +335,8 @@ struct foo {
 
 C++ gives us a type-safe, robust way to do this
 Memory layout is, in general, compiler-specific
-int foo::* is a type that can bind to any member of foo of type int
-
-
-
-
-
+`int foo::*` is a type that can bind to any member of `foo` of type `int`
+Binding uses an address-like syntax `int foo::* ptrToMem{&foo::x};` Pretending to be a pointer( really an offset ) 
 
 ## Example
 ``` cpp
@@ -319,12 +352,40 @@ Pointer-to-member syntax is pretty arcane
 For a member of foo of type T:
 	T foo::*
 But this is just expressing a type
-So we can make a nice alias (template)
+So we can make a nice alias (template) 
+*/
+template<class T>
+using foo_mem_ptr = T foo::*;
 
 
+/*
 A pointer-to-member is initialized by taking the “address” of the member
 There’s no actual object, so this is really an offset, known to the compiler
 The construction is type-safe
+
+
+*/
+
+int main() {
+    foo_mem_ptr<int> xMemPtr{&foo::x},
+                    yMemptr{&foo::y};
+    
+    foo_mem_ptr<double> zMemPtr{&foo::z};
+
+    foo f{};
+
+    std::println("{}," f.*xMemPtr);
+
+    std::println("{}," f.*yMemPtr);
+
+    std::println("{}," f.*zMemPtr);
+}
+
+/*
+A pointer-to-member is initialized by taking the 'address' of the member
+There's no actual object, so this is really an offset, known to the compiler
+The constructor is type-safe
+
 
 To use a pointer-to-member we need an object, so we create one
 
@@ -332,11 +393,10 @@ Ordinarily, to access member x, we write f.x
 Analogously:
 f.(Dereferenced pointer-to-member)
 Or    f.*pointer-to-member
+
+
 */
 
-int main() {
-
-}
 ```
 
 
@@ -344,7 +404,7 @@ int main() {
 
 ```cpp
 template<class R, class... Args>
-using function_pointer_type = R(*)(Args...); // Alias template for functino pointers
+using function_pointer_type = R(*)(Args...); // Alias template for function pointers
 
 template<classR, class ... Args> // Alias template for relevant pointers to memebers.
 using glad_ctx_ptr_to_mem_fn_ptr_type = function_pointer_type<R, Args...> GladGLContext::*;
@@ -356,7 +416,7 @@ public:
 
     constexpr static num_messages max_reported_messages{10};
 
-    gl_function(functino_pointer_type f, std::source_location loc = std::source_location::current()) {...} 
+    gl_function(function_pointer_type f, std::source_location loc = std::source_location::current()) {...} 
     
     gl_function(unchecked_debug_output_t, functino_pointer_type f, std::source_location loc = std::source_location::current()) {...} 
 
@@ -373,7 +433,7 @@ private:
 
     static function_pointer_type validate(function_pointer_type f, std::source_location loc) {...} // Two validations
 
-    functino_pointer_type<R, Args ...> validate(const GladGLContext& ctx, std::source_location loc) const {...} // Two validations
+    function_pointer_type<R, Args ...> validate(const GladGLContext& ctx, std::source_location loc) const {...} // Two validations
 
     static void check_for_errors(std::source_location loc) {...} // Check with context
 }
@@ -386,9 +446,9 @@ private:
 ## Why do we validate twice?
 Upon construction, it’s possible to feed in a nullptr
 Although ptr-to-mem is morally an offset, it is legal to set it to nullptr
-Actually, gl_function{nullptr} doesn’t compile, because CTAD fails
+Actually, `gl_function{nullptr}` doesn’t compile, because CTAD fails
 But if clients really want to, they can get around this
-gl_function<void(GLuint)>{nullptr}
+`gl_function<void(GLuint)>{nullptr}`
 This leaves us validating solely for a weird edge case
 Can we do better?
 
@@ -411,12 +471,6 @@ Now the compiler will reject
 But hold on, shouldn’t there be a defaulted source location argument?
 After all, the pre-existing constructors take one…
 `gl_function(pointer_to_member_type pMember, std::source_location loc = std::source_lcoation::current());`
-
-
-
-
-
-
 
 
 ## It keeps getting better!
@@ -446,7 +500,7 @@ Our non-deleted constructors are very similar
 
 ```cpp
 gl_function(pointer_to_member_type pMember) 
-    : M_Fn(pMember)
+    : M_Fn(pMember) // Forward argument to the wrapped type
 {}
 
 gl_function(unchecked_debug_output_t, pointer_to_member_type pMember)
@@ -467,8 +521,8 @@ gl_function(unchecked_debug_output_t, pointer_to_member_type pMember)
 
 ## Find and Replace
 We need to make the following transformation:
-	gl_function{glFoo}(args...)
-→  gl_function{&GladGLContext::Foo}(ctx, args...)
+`gl_function{glFoo}(args...)`
+→  `gl_function{&GladGLContext::Foo}(ctx, args...)`
 We can’t do this with standard find-and-replace for all Foo
 
 But this is what regular expressions were made for!
@@ -476,11 +530,11 @@ But this is what regular expressions were made for!
 Although…
 
 ## The Regular Expression
+```
 Recall the example:
-```cppp
-	       gl_function{glFoo}(args...)
-→  gl_function{&GladGLContext::Foo}(ctx, args...)
-Find: gl_function{gl(.*?)}\((.*?)\)
+`gl_function{glFoo}(args...)`
+→  `gl_function{&GladGLContext::Foo}(ctx, args...)`
+Find: `gl_function{gl(.*?)}\((.*?)\)`
 The red brackets are capture groups: we can refer back to their contents
 Brackets as plain characters are \( or \)
 . matches any character except line breaks
@@ -491,25 +545,22 @@ $n is the contents of the nth capture group, at least on MSVC
 
 ## Does it work?
 Kinda!
-
 In the Demo project it misses:
-Unchecked debug output (7):            gl_function{unchecked_debug_ouput, glFoo}(...)
-Invocation with zero arguments (1):  gl_function{glFoo}()
-Delayed invocation (7):                     gl_function{glFoo}
-Multiline (1)                                         gl_function{glFoo}(
-                                                                  )
-```
+Unchecked debug output (7):             `gl_function{unchecked_debug_ouput, glFoo}(...)`
+Invocation with zero arguments (1):     `gl_function{glFoo}()`
+Delayed invocation (7):                 `gl_function{glFoo}`
+Multiline (1)                           `gl_function{glFoo}(`
+                                                            `)`
 There are few enough of these it’s easy to do them by hand or by modifying the regex
 
 Used judiciously, regex can be a big time saver…
 
 But they can become more trouble than they’re worth
-
+```
 ## Dude where's my context?
 
 Our new code cannot possibly compile!
 gl_function{&GladGLContext::Foo}(ctx, args...)
-
 
 
 We need to create a context and figure out how to propagate it
@@ -617,48 +668,77 @@ We want to supplement it with a context_ref
 
 ## Architectural Layers
 To first approximation, context_ref just wraps a pointer to a context
-	class context_ref { const GladGLContext* m_Context; }
+	`class context_ref { const GladGLContext* m_Context; }`
 Clients get access to a reference, hence the _ref
 
 We can then build a wrapper that holds a context and a resource
+```cpp
 class contextual_resource_handle {
 		context_ref m_Context;
 resource_handle m_Resouce;
 	public:
 			// ETC
 };
+```
 
 ## Stop and think: Semantics!
-resource_handle is move-only
+`resource_handle` is `move-only`
 
-By default, contextual_resource_handle will be move-only
+By default, `contextual_resource_handle` will be `move-only`
 So far, so good…
 
-But what should happen when we move a context_ref?!
+But what should happen when we move a `context_ref?`!
 In particular, do we need to worry about the moved-from state?
 
 ## Move Construction just works
 
-diagrams!
+`context_ref` => Context A
+`Shader Program 42`
+`resource_handle 42`
+
+
+Creating new:  
+`new context_ref` => Context A
+`new resource_handle 42`  
+`new context_ref` is not owning, no harm in copies. It's beneficial as we can enforce non-null as an invariant
+`new resource_handle 42` is now owning, we make sure that the old points to 0 `shader_program 0 `  
 
 ## Move Assignment Needs work!
 
-diagrams!
+`context_ref_A` => Context A
+`Shader Program 42`
+`resource_handle_A 42`
+
+
+`context_ref_B` => Context B
+`Shader Program 7`
+`resource_handle_B 7`
+
+
+Move assignment has been crafted to swap `resource_handle`
+This means that it will change to
+`resource_handle_A 7`
+`resource_handle_B 42`  
+Therefore we'd better do the same with context ref too!
+`context_ref_A` => Context B
+`context_ref_B` => Context A
+(OK THIS IS A SAM NOTE - the variables were all actually called context_ref x2, it did not have the _A or _B, it was just to illustrate. but this is to enforce that the resource handles and contexts matched in pairs)
+
+
 
 ## When there's one, there's many!
 
 ``` cpp
-
 template<std::size_t N>
 class contextual_resource_handles {
-    std::array<contextual_resource_handle, N> m_Handles;
+    std::array<contextual_resource_handle, N> m_Handles; // N contextual resources...
 public:
-    context_resourece_handles(const GladGLContext& ctx, const raw_indices<N>& indices) 
+    context_resourece_handles(const GladGLContext& ctx, const raw_indices<N>& indices) // But this is constructed from a single context. Couldn't we just one context_ref and N resource_handles? Yes, but not today 
         : m_Handles{to_array(indices, [&ctx](GLuint i)) { return contextual_resource_handle{ctx, resource_handle{i}; }}}
         {}
 
     [[nodiscard]]
-    auto begin() const noexcept { return m_Handles.begin(); }
+    auto begin() const noexcept { return m_Handles.begin(); } // Previously had handles in an array - now exposes a range
 
     [[nodiscard]]
     auto end() const noexcept { return m_Handles.end(); }
@@ -691,7 +771,7 @@ public:
 By and large, refactoring is pretty straightforward
 
 Some names will need subsequently changing
-		handle().handle().index(), anyone?
+`handle().handle().index()`, anyone?
 
 But we’ll encounter a nasty pitfall
 
@@ -711,7 +791,26 @@ We must also take care here:
 ```cpp
 template<class... Args>
     requires std::is_constructible_v<lifeEvents, Args...>
-explicit(sizeof...(Args) == 1) generic_shader_resource(const Args&... args) 
+explicit(sizeof...(Args) == 1) generic_shader_resource(const Args&... args) // the Sizeof == 1 but we add an argument at the front.
     : m_Handle{LifeEvents{args...} create(ctx)}
     {}
 ```
+
+
+
+
+## Coding
+
+
+# `GLFunction.hpp`
+Move function_pointer_type alias out, and wrap it with a template class
+
+Define an alias template for the glad context
+`using glad_ctx_ptr_to_mem_fn_ptr_type = function_pointer_type<R, Args...> GladGLContext::*;`
+Inside the template class
+`using pointer_to_mem_type =  glad_ctx_ptr_to_mem_fn_ptr_type`
+
+I think he is basically generalizing the new member functions to the new GLAD context
+But he is using the offset instead of pointer.
+
+A lot of propagating context
